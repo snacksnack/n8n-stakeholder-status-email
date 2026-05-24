@@ -1,0 +1,248 @@
+{
+  "name": "Stakeholder Status Email — RC1",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 16 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "node-schedule-trigger",
+      "name": "Every Friday at 4pm",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [0, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.notion.com/v1/databases/a6d97762-f3b8-44db-abff-d51688ef6ece/query",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "{\n  \"sorts\": [\n    {\n      \"property\": \"Status\",\n      \"direction\": \"ascending\"\n    }\n  ]\n}"
+      },
+      "id": "node-notion-get-tasks",
+      "name": "Notion — Get All RC1 Tasks",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [240, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_YOUR_NOTION_HEADER_AUTH_CREDENTIAL_ID",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": true,
+        "options": {
+          "fields": "summary,status,priority,assignee,issuetype,updated",
+          "jql": "project = RC1 AND parent = RC1-31 AND updated >= -7d ORDER BY updated DESC"
+        }
+      },
+      "id": "node-jira-get-week",
+      "name": "Jira — Get This Week's Updates",
+      "type": "n8n-nodes-base.jira",
+      "typeVersion": 1,
+      "position": [240, 500],
+      "credentials": {
+        "jiraSoftwareCloudApi": {
+          "id": "REPLACE_WITH_YOUR_JIRA_CREDENTIAL_ID",
+          "name": "Jira — hirereidcollins"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Collect outputs from both Notion and Jira nodes\nconst notionData = $('Notion — Get All RC1 Tasks').first().json;\nconst jiraItems = $('Jira — Get This Week\\'s Updates').all();\n\n// Process Notion pages\nconst pages = notionData.results || [];\nconst taskSummary = pages.map(p => {\n  const props = p.properties || {};\n  return {\n    name: props.Name?.title?.[0]?.plain_text || 'Untitled',\n    jiraKey: props['Jira Key']?.rich_text?.[0]?.plain_text || '',\n    status: props.Status?.select?.name || 'Unknown',\n    priority: props.Priority?.select?.name || 'Unknown',\n    assignee: props.Assignee?.rich_text?.[0]?.plain_text || 'Unassigned'\n  };\n});\n\n// Group by status\nconst done = taskSummary.filter(t => t.status === 'Done');\nconst inProgress = taskSummary.filter(t => t.status === 'In Progress');\nconst inReview = taskSummary.filter(t => t.status === 'In Review');\nconst toDo = taskSummary.filter(t => t.status === 'To Do');\nconst blocked = taskSummary.filter(t => t.status === 'Blocked');\n\n// Process Jira updates this week\nconst weeklyUpdates = jiraItems.map(i => ({\n  key: i.json.key,\n  summary: i.json.fields?.summary,\n  status: i.json.fields?.status?.name,\n  assignee: i.json.fields?.assignee?.displayName || 'Unassigned'\n}));\n\n// Calculate overall health\nconst total = taskSummary.length;\nconst doneCount = done.length;\nconst blockedCount = blocked.length;\nconst completionPct = total > 0 ? Math.round((doneCount / total) * 100) : 0;\n\nlet health = '🟢 On Track';\nif (blockedCount > 0) health = '🔴 At Risk';\nelse if (completionPct < 50 && inProgress.length === 0) health = '🟡 Needs Attention';\n\n// Build data payload for Claude\nreturn [{\n  json: {\n    health,\n    completionPct,\n    total,\n    doneCount,\n    inProgressCount: inProgress.length,\n    blockedCount,\n    done,\n    inProgress,\n    inReview,\n    toDo,\n    blocked,\n    weeklyUpdates,\n    reportDate: new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })\n  }\n}];"
+      },
+      "id": "node-aggregate-data",
+      "name": "Aggregate & Summarize Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "REPLACE_WITH_YOUR_ANTHROPIC_API_KEY"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 1000,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"You are a Senior Technical Program Manager writing a weekly status email for the AI Incident Summarizer project (RC1). Write a professional hybrid status email with two sections:\\n\\n1. EXECUTIVE SUMMARY: A concise 2-3 sentence paragraph suitable for C-suite. Focus on overall health, key progress, and any risks. No jargon.\\n\\n2. DETAILED STATUS: Bullet points for the dev team and PM covering completed work, in-progress items, blockers, and next week's plan.\\n\\nHere is the project data:\\n\\nReport Date: {{ $json.reportDate }}\\nOverall Health: {{ $json.health }}\\nCompletion: {{ $json.completionPct }}% ({{ $json.doneCount }}/{{ $json.total }} tickets done)\\n\\nDone this week: {{ JSON.stringify($json.weeklyUpdates.filter(t => t.status === 'Done')) }}\\nCurrently In Progress: {{ JSON.stringify($json.inProgress) }}\\nIn Review: {{ JSON.stringify($json.inReview) }}\\nBlocked: {{ JSON.stringify($json.blocked) }}\\nUp Next (To Do): {{ JSON.stringify($json.toDo) }}\\n\\nFormat the email with:\\n- Subject line first (prefix with SUBJECT:)\\n- Then the body\\n- Keep the executive summary under 3 sentences\\n- Use ✅ for completed items, 🔄 for in progress, 🚫 for blocked, 📋 for upcoming\\n- Sign off as Reid Collins, Senior TPM\"\n    }\n  ]\n}"
+      },
+      "id": "node-claude-generate",
+      "name": "Claude — Generate Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [720, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract Claude's response and parse subject + body\nconst response = $input.first().json;\nconst text = response.content?.find(b => b.type === 'text')?.text || '';\n\n// Split subject from body\nconst subjectMatch = text.match(/SUBJECT:\\s*(.+?)\\n/);\nconst subject = subjectMatch ? subjectMatch[1].trim() : 'AI Incident Summarizer — Weekly Status Update';\nconst body = text.replace(/SUBJECT:\\s*.+?\\n/, '').trim();\n\n// Convert newlines to HTML for email\nconst htmlBody = body\n  .split('\\n')\n  .map(line => `<p>${line}</p>`)\n  .join('')\n  .replace(/<p><\\/p>/g, '<br/>');\n\nreturn [{\n  json: {\n    subject,\n    body,\n    htmlBody\n  }\n}];"
+      },
+      "id": "node-parse-email",
+      "name": "Parse Email Content",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [960, 400]
+    },
+    {
+      "parameters": {
+        "sendTo": "REPLACE_WITH_STAKEHOLDER_EMAILS",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.htmlBody }}",
+        "options": {
+          "ccList": "REPLACE_WITH_CC_EMAILS",
+          "replyTo": "hire.reid.collins@gmail.com"
+        }
+      },
+      "id": "node-gmail-send",
+      "name": "Gmail — Send Status Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1200, 400],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REPLACE_WITH_YOUR_GMAIL_CREDENTIAL_ID",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "channel": "C0B4L4L5H4J",
+        "text": "=✅ Weekly status email sent!\nSubject: {{ $json.subject }}\nSent to stakeholders at {{ $now.toFormat('h:mm a') }}",
+        "otherOptions": {}
+      },
+      "id": "node-slack-confirm",
+      "name": "Slack — Confirm Sent",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.1,
+      "position": [1440, 400],
+      "credentials": {
+        "slackApi": {
+          "id": "REPLACE_WITH_YOUR_SLACK_CREDENTIAL_ID",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "workflowId": "REPLACE_WITH_THIS_WORKFLOW_ID",
+        "events": ["workflow.error"]
+      },
+      "id": "node-error-trigger",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [0, 700]
+    },
+    {
+      "parameters": {
+        "jsCode": "const error = $input.first().json;\nreturn [{\n  json: {\n    message: `⚠️ Stakeholder status email failed\\nError: ${error.execution?.error?.message || 'Unknown error'}\\nTime: ${new Date().toISOString()}`\n  }\n}];"
+      },
+      "id": "node-format-error",
+      "name": "Format Error Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 700]
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "channel": "C0B4L4L5H4J",
+        "text": "={{ $json.message }}",
+        "otherOptions": {}
+      },
+      "id": "node-slack-error",
+      "name": "Slack — Send Error Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.1,
+      "position": [480, 700],
+      "credentials": {
+        "slackApi": {
+          "id": "REPLACE_WITH_YOUR_SLACK_CREDENTIAL_ID",
+          "name": "Slack account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every Friday at 4pm": {
+      "main": [
+        [
+          { "node": "Notion — Get All RC1 Tasks", "type": "main", "index": 0 },
+          { "node": "Jira — Get This Week's Updates", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Notion — Get All RC1 Tasks": {
+      "main": [[{ "node": "Aggregate & Summarize Data", "type": "main", "index": 0 }]]
+    },
+    "Jira — Get This Week's Updates": {
+      "main": [[{ "node": "Aggregate & Summarize Data", "type": "main", "index": 0 }]]
+    },
+    "Aggregate & Summarize Data": {
+      "main": [[{ "node": "Claude — Generate Email", "type": "main", "index": 0 }]]
+    },
+    "Claude — Generate Email": {
+      "main": [[{ "node": "Parse Email Content", "type": "main", "index": 0 }]]
+    },
+    "Parse Email Content": {
+      "main": [[{ "node": "Gmail — Send Status Email", "type": "main", "index": 0 }]]
+    },
+    "Gmail — Send Status Email": {
+      "main": [[{ "node": "Slack — Confirm Sent", "type": "main", "index": 0 }]]
+    },
+    "Error Trigger": {
+      "main": [[{ "node": "Format Error Message", "type": "main", "index": 0 }]]
+    },
+    "Format Error Message": {
+      "main": [[{ "node": "Slack — Send Error Alert", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "errorWorkflow": "REPLACE_WITH_THIS_WORKFLOW_ID"
+  },
+  "staticData": null,
+  "tags": ["status-email", "RC1", "stakeholder", "claude"],
+  "triggerCount": 2,
+  "updatedAt": "2026-05-22T00:00:00.000Z",
+  "versionId": "1"
+}

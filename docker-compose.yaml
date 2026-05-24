@@ -1,0 +1,8 @@
+# This workflow runs on your existing n8n instance.
+# No new Docker container needed — just import the workflow JSON.
+#
+# To start your existing n8n instance:
+#   cd ~/programming/personal/n8n-jira-notion-sync
+#   docker compose up -d
+#
+# Then import workflows/stakeholder_status_email.json into n8n.
