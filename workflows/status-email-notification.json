@@ -12,13 +12,13 @@
           ]
         }
       },
-      "id": "2d24fa62-0777-439b-8961-689a7976eeb7",
+      "id": "d3c1c845-fcc9-4032-bbdd-e6a53570fca0",
       "name": "Every Friday at 4pm",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.1,
       "position": [
-        240,
-        -96
+        5184,
+        1936
       ]
     },
     {
@@ -41,13 +41,13 @@
         "jsonBody": "{}",
         "options": {}
       },
-      "id": "2faf384c-612a-423f-b2c1-101543d52576",
+      "id": "67ef820e-30d8-4d2f-8d5c-ae8344b54141",
       "name": "Notion — Get All RC1 Tasks",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        464,
-        -192
+        5408,
+        1840
       ],
       "credentials": {
         "httpHeaderAuth": {
@@ -65,13 +65,13 @@
           "jql": "project = RC1 AND parent = RC1-31 AND updated >= -7d ORDER BY updated DESC"
         }
       },
-      "id": "38bd63c0-8fcd-47dd-849b-67747857c686",
+      "id": "84bd5358-4cc4-44df-803b-3b2b46cb69a7",
       "name": "Jira — Get This Week's Updates",
       "type": "n8n-nodes-base.jira",
       "typeVersion": 1,
       "position": [
-        464,
-        0
+        5408,
+        2032
       ],
       "credentials": {
         "jiraSoftwareCloudApi": {
@@ -84,13 +84,13 @@
       "parameters": {
         "jsCode": "// Collect outputs from both Notion and Jira nodes\nconst notionData = $('Notion — Get All RC1 Tasks').first().json;\nlet jiraItems = [];\ntry {\n  jiraItems = $('Jira — Get This Week\\'s Updates').all();\n} catch(e) {\n  jiraItems = [];\n}\n\n// Process Notion pages — filter to RC1-31 epic only\nconst pages = notionData.results || [];\nconst rc1Pages = pages.filter(p => {\n  const epic = p.properties?.Epic?.rich_text?.[0]?.plain_text;\n  return epic === 'RC1-31';\n});\n\nconst taskSummary = rc1Pages.map(p => {\n  const props = p.properties || {};\n  return {\n    name: props.Name?.title?.[0]?.plain_text || 'Untitled',\n    jiraKey: props['Jira Key']?.rich_text?.[0]?.plain_text || '',\n    status: props.Status?.select?.name || 'Unknown',\n    priority: props.Priority?.select?.name || 'Unknown',\n    assignee: props.Assignee?.rich_text?.[0]?.plain_text || 'Unassigned'\n  };\n});\n\n// Group by status\nconst done = taskSummary.filter(t => t.status === 'Done');\nconst inProgress = taskSummary.filter(t => t.status === 'In Progress');\nconst inReview = taskSummary.filter(t => t.status === 'In Review');\nconst toDo = taskSummary.filter(t => t.status === 'To Do');\nconst blocked = taskSummary.filter(t => t.status === 'Blocked');\n\n// Weekly Jira updates\nconst weeklyUpdates = jiraItems.map(i => ({\n  key: i.json.key,\n  summary: i.json.fields?.summary,\n  status: i.json.fields?.status?.name,\n  assignee: i.json.fields?.assignee?.displayName || 'Unassigned'\n}));\n\n// Health\nconst total = taskSummary.length;\nconst doneCount = done.length;\nconst completionPct = total > 0 ? Math.round((doneCount / total) * 100) : 0;\nlet health = '🟢 On Track';\nif (blocked.length > 0) health = '🔴 At Risk';\nelse if (completionPct < 50 && inProgress.length === 0) health = '🟡 Needs Attention';\n\n// Table styles\nconst tableStyle = 'border-collapse:collapse;width:100%;margin-bottom:24px;font-family:Arial,sans-serif;font-size:13px;';\nconst thStyle = 'background:#4472C4;color:white;padding:10px 12px;text-align:left;font-weight:600;';\nconst tdStyle = 'padding:8px 12px;border-bottom:1px solid #e0e0e0;vertical-align:top;';\nconst tdAltStyle = 'padding:8px 12px;border-bottom:1px solid #e0e0e0;background:#f5f8ff;vertical-align:top;';\n\n// Build HTML table helper\nfunction buildTable(title, emoji, rows) {\n  if (rows.length === 0) return '';\n  let html = `<h3 style=\"color:#2c3e50;margin-top:24px;\">${emoji} ${title}</h3>`;\n  html += `<table style=\"${tableStyle}\">`;\n  html += `<tr><th style=\"${thStyle}\">Ticket</th><th style=\"${thStyle}\">Description</th><th style=\"${thStyle}\">Priority</th><th style=\"${thStyle}\">Assignee</th></tr>`;\n  rows.forEach((r, i) => {\n    const td = i % 2 === 0 ? tdStyle : tdAltStyle;\n    const jiraUrl = `https://hirereidcollins.atlassian.net/browse/${r.jiraKey}`;\n    html += `<tr>\n      <td style=\"${td}\"><a href=\"${jiraUrl}\" style=\"color:#4472C4;text-decoration:none;\">${r.jiraKey}</a></td>\n      <td style=\"${td}\">${r.name}</td>\n      <td style=\"${td}\">${r.priority}</td>\n      <td style=\"${td}\">${r.assignee}</td>\n    </tr>`;\n  });\n  html += '</table>';\n  return html;\n}\n\n// Build full tables HTML\nconst tablesHtml = [\n  buildTable('In Progress', '🔄', inProgress),\n  buildTable('In Review', '👀', inReview),\n  buildTable('Blocked', '🚫', blocked),\n  buildTable('Up Next', '📋', toDo),\n  buildTable('Completed This Week', '✅', done)\n].join('');\n\nconst reportDate = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });\n\nreturn [{\n  json: {\n    health,\n    completionPct,\n    total,\n    doneCount,\n    inProgressCount: inProgress.length,\n    inReviewCount: inReview.length,\n    blockedCount: blocked.length,\n    toDoCount: toDo.length,\n    tablesHtml,\n    reportDate,\n    weeklyUpdates\n  }\n}];"
       },
-      "id": "f95ad9f1-29f2-4f46-a26b-0b7b3e2a5e94",
+      "id": "8b6e7076-132f-4756-9f6f-25e2c07fc863",
       "name": "Aggregate & Summarize Data",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        688,
-        -96
+        5632,
+        1936
       ]
     },
     {
@@ -102,7 +102,7 @@
           "parameters": [
             {
               "name": "x-api-key",
-              "value": "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"
+              "value": "={{ $vars.ANTHROPIC_API_KEY }}"
             },
             {
               "name": "anthropic-version",
@@ -115,26 +115,26 @@
         "jsonBody": "={\n  \"model\": \"claude-sonnet-4-6\",\n  \"max_tokens\": 1000,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"You are a Senior TPM writing a weekly status email for the AI Incident Summarizer project (RC1). Write ONLY these two things and nothing else: 1) The first line must be: SUBJECT: AI Incident Summarizer — Weekly Status Update ({{ $json.reportDate }}) 2) Then write an HTML executive summary block: <div style='background:#f0f4ff;border-left:4px solid #4472C4;padding:16px;margin:16px 0;'><h2 style='color:#2c3e50;margin:0 0 8px 0;'>Executive Summary</h2><p style='margin:0;font-size:14px;line-height:1.6;'>YOUR 2-3 SENTENCE SUMMARY HERE</p></div> Base the summary on: Health={{ $json.health }}, Completion={{ $json.completionPct }}% ({{ $json.doneCount }}/{{ $json.total }} tickets), In Progress={{ $json.inProgressCount }}, Blocked={{ $json.blockedCount }}. Keep it C-suite friendly, no jargon. Do not add anything else — no sign-off, no tables, no extra HTML.\"\n    }\n  ]\n}",
         "options": {}
       },
-      "id": "736f9986-1e59-406c-bf7e-c2ca2e633953",
+      "id": "759c6b23-0365-4885-9317-e25de9e466d7",
       "name": "Claude — Generate Email",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        912,
-        -96
+        5856,
+        1936
       ]
     },
     {
       "parameters": {
-        "jsCode": "const response = $input.first().json;\nlet text = response.content?.find(b => b.type === 'text')?.text || '';\n\n// Strip markdown fences\ntext = text.replace(/^```html\\n?/i, '').replace(/```$/i, '').trim();\n\n// Extract subject\nconst subjectMatch = text.match(/SUBJECT:\\s*(.+?)(\\n|<)/);\nconst subject = subjectMatch ? subjectMatch[1].trim() : 'AI Incident Summarizer — Weekly Status Update';\n\n// Extract executive summary HTML (everything after the SUBJECT line)\nconst execSummary = text.replace(/SUBJECT:\\s*.+?(\\n|(?=<))/, '').trim();\n\n// Get pre-built tables from Aggregate node\nconst tablesHtml = $('Aggregate & Summarize Data').first().json.tablesHtml;\nconst reportDate = $('Aggregate & Summarize Data').first().json.reportDate;\nconst health = $('Aggregate & Summarize Data').first().json.health;\nconst completionPct = $('Aggregate & Summarize Data').first().json.completionPct;\nconst doneCount = $('Aggregate & Summarize Data').first().json.doneCount;\nconst total = $('Aggregate & Summarize Data').first().json.total;\n\n// Build full email\nconst htmlBody = `\n<div style=\"font-family:Arial,sans-serif;max-width:800px;margin:0 auto;padding:24px;\">\n  <h1 style=\"color:#2c3e50;border-bottom:2px solid #4472C4;padding-bottom:8px;\">\n    AI Incident Summarizer — Weekly Status Report\n  </h1>\n  <p style=\"color:#666;font-size:12px;\">Week ending ${reportDate}</p>\n\n  ${execSummary}\n\n  <h2 style=\"color:#2c3e50;margin-top:32px;\">Project Status</h2>\n  <table style=\"border-collapse:collapse;width:100%;margin-bottom:24px;\">\n    <tr>\n      <td style=\"padding:12px;background:#f5f5f5;border:1px solid #e0e0e0;width:33%;\">\n        <div style=\"font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;\">Overall Health</div>\n        <div style=\"font-size:20px;font-weight:600;margin-top:4px;\">${health}</div>\n      </td>\n      <td style=\"padding:12px;background:#f5f5f5;border:1px solid #e0e0e0;width:33%;\">\n        <div style=\"font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;\">Completion</div>\n        <div style=\"font-size:20px;font-weight:600;margin-top:4px;\">${completionPct}%</div>\n        <div style=\"font-size:12px;color:#888;\">${doneCount} of ${total} tickets closed</div>\n      </td>\n      <td style=\"padding:12px;background:#f5f5f5;border:1px solid #e0e0e0;width:33%;\">\n        <div style=\"font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;\">Report Date</div>\n        <div style=\"font-size:14px;font-weight:600;margin-top:4px;\">${reportDate}</div>\n      </td>\n    </tr>\n  </table>\n\n  ${tablesHtml}\n\n  <p style=\"margin-top:32px;font-size:13px;color:#444;\">\n    Best regards,<br>\n    <strong>Reid Collins</strong><br>\n    Senior Technical Program Manager\n  </p>\n  <p style=\"font-size:11px;color:#aaa;border-top:1px solid #eee;padding-top:8px;margin-top:16px;\">\n    This report was generated automatically by n8n + Claude AI\n  </p>\n</div>\n`;\n\nreturn [{ json: { subject, body: htmlBody, htmlBody } }];"
+        "jsCode": "const response = $input.first().json;\nlet text = response.content?.find(b => b.type === 'text')?.text || '';\n// Strip markdown fences\ntext = text.replace(/^```html\\n?/i, '').replace(/```$/i, '').trim();\n// Extract subject\nconst subjectMatch = text.match(/SUBJECT:\\s*(.+?)(\\n|<)/);\nconst subject = subjectMatch ? subjectMatch[1].trim() : 'AI Incident Summarizer — Weekly Status Update';\n// Extract executive summary HTML (everything after the SUBJECT line)\nconst execSummary = text.replace(/SUBJECT:\\s*.+?(\\n|(?=<))/, '').trim();\n// Get pre-built tables from Aggregate node\nconst tablesHtml = $('Aggregate & Summarize Data').first().json.tablesHtml;\nconst reportDate = $('Aggregate & Summarize Data').first().json.reportDate;\nconst health = $('Aggregate & Summarize Data').first().json.health;\nconst completionPct = $('Aggregate & Summarize Data').first().json.completionPct;\nconst doneCount = $('Aggregate & Summarize Data').first().json.doneCount;\nconst total = $('Aggregate & Summarize Data').first().json.total;\n\n// Shared email content\nconst emailContent = `\n  <h1 style=\"color:#2c3e50;border-bottom:2px solid #4472C4;padding-bottom:8px;\">\n    AI Incident Summarizer — Weekly Status Report\n  </h1>\n  <p style=\"color:#666;font-size:12px;\">Week ending ${reportDate}</p>\n  ${execSummary}\n  <h2 style=\"color:#2c3e50;margin-top:32px;\">Project Status</h2>\n  <table style=\"border-collapse:collapse;width:100%;margin-bottom:24px;\">\n    <tr>\n      <td style=\"padding:12px;background:#f5f5f5;border:1px solid #e0e0e0;width:33%;\">\n        <div style=\"font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;\">Overall Health</div>\n        <div style=\"font-size:20px;font-weight:600;margin-top:4px;\">${health}</div>\n      </td>\n      <td style=\"padding:12px;background:#f5f5f5;border:1px solid #e0e0e0;width:33%;\">\n        <div style=\"font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;\">Completion</div>\n        <div style=\"font-size:20px;font-weight:600;margin-top:4px;\">${completionPct}%</div>\n        <div style=\"font-size:12px;color:#888;\">${doneCount} of ${total} tickets closed</div>\n      </td>\n      <td style=\"padding:12px;background:#f5f5f5;border:1px solid #e0e0e0;width:33%;\">\n        <div style=\"font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;\">Report Date</div>\n        <div style=\"font-size:14px;font-weight:600;margin-top:4px;\">${reportDate}</div>\n      </td>\n    </tr>\n  </table>\n  ${tablesHtml}\n  <p style=\"margin-top:32px;font-size:13px;color:#444;\">\n    Best regards,<br>\n    <strong>Reid Collins</strong><br>\n    Senior Technical Program Manager\n  </p>\n  <p style=\"font-size:11px;color:#aaa;border-top:1px solid #eee;padding-top:8px;margin-top:16px;\">\n    This report was generated automatically by n8n + Claude AI\n  </p>\n`;\n\n// Clean version for stakeholders (no approval buttons)\nconst htmlBody = `\n<div style=\"font-family:Arial,sans-serif;max-width:800px;margin:0 auto;padding:24px;\">\n  ${emailContent}\n</div>\n`;\n\n// Preview version with approval buttons (sent to Reid only)\nconst previewHtmlBody = `\n<div style=\"font-family:Arial,sans-serif;max-width:800px;margin:0 auto;padding:24px;\">\n  ${emailContent}\n  <div style=\"margin-top:24px;padding:16px;background:#f0f4ff;border:1px solid #c0cfe8;border-radius:8px;\">\n    <p style=\"margin:0 0 12px 0;font-weight:bold;color:#2c3e50;\">⚠️ Preview — Not yet sent to stakeholders</p>\n    <a href=\"https://hihelloreid.app.n8n.cloud/webhook/154acfc0-7e3c-41e5-9bd2-b1f657fabe5f\" style=\"display:inline-block;margin-right:12px;padding:10px 20px;background:#27ae60;color:white;text-decoration:none;border-radius:4px;\">✅ Approve & Send</a>\n    <a href=\"https://hihelloreid.app.n8n.cloud/webhook/f496bca8-d9c5-4c8d-9103-5bf7674edefa\" style=\"display:inline-block;margin-right:12px;padding:10px 20px;background:#2c3e50;color:white;text-decoration:none;border-radius:4px;\">👁 View in Browser</a>\n    <a href=\"https://hihelloreid.app.n8n.cloud/webhook/89c148a9-8b71-434c-a241-9b5542f8cf6a\" style=\"display:inline-block;padding:10px 20px;background:#c0392b;color:white;text-decoration:none;border-radius:4px;\">🗑 Discard</a>\n  </div>\n</div>\n`;\n\nreturn [{ json: { subject, body: htmlBody, htmlBody, previewHtmlBody } }];"
       },
-      "id": "899d1bb4-71de-458c-95d0-e11c37ba2ceb",
+      "id": "dbf752fd-b7ef-4719-bc92-12375343f530",
       "name": "Parse Email Content",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1136,
-        -96
+        6080,
+        1936
       ]
     },
     {
@@ -147,13 +147,13 @@
           "replyTo": "hire.reid.collins@gmail.com"
         }
       },
-      "id": "0e0713aa-c4c1-4af8-be39-7b3a1119e051",
+      "id": "4678216f-e5f3-4cc7-b644-bb24621e465e",
       "name": "Gmail — Send Status Email",
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.1,
       "position": [
-        1360,
-        -96
+        6528,
+        2032
       ],
       "webhookId": "db4fb060-a209-4d9d-ba6c-11b9ec103f61",
       "credentials": {
@@ -165,26 +165,26 @@
     },
     {
       "parameters": {},
-      "id": "3015d715-46c9-43bb-9a2e-836d3da87bb0",
+      "id": "2c47863b-070a-46a6-8167-3070e8a08fe3",
       "name": "Error Trigger",
       "type": "n8n-nodes-base.errorTrigger",
       "typeVersion": 1,
       "position": [
-        240,
-        224
+        5184,
+        2256
       ]
     },
     {
       "parameters": {
         "jsCode": "const error = $input.first().json;\nreturn [{\n  json: {\n    message: `⚠️ Stakeholder status email failed\\nError: ${error.execution?.error?.message || 'Unknown error'}\\nTime: ${new Date().toISOString()}`\n  }\n}];"
       },
-      "id": "c345ee48-9d52-4ca8-ac7c-2bc40ef8d25b",
+      "id": "f61a8bf1-8b30-427d-a48a-968da4551b92",
       "name": "Format Error Message",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        464,
-        224
+        5408,
+        2256
       ]
     },
     {
@@ -199,10 +199,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        1584,
-        -96
+        6752,
+        2032
       ],
-      "id": "f367ccf9-e900-46d3-acdf-7307823cb9a8",
+      "id": "fdcb76ac-452a-4ceb-9c2c-0bad0f41de1c",
       "name": "HTTP Request"
     },
     {
@@ -217,11 +217,462 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        688,
-        224
+        5632,
+        2256
       ],
-      "id": "745fca84-8de5-4acb-819c-b867bbb106af",
+      "id": "88ab623d-e24f-410d-8868-b0f3fa6b8b35",
       "name": "HTTP Request1"
+    },
+    {
+      "parameters": {
+        "path": "154acfc0-7e3c-41e5-9bd2-b1f657fabe5f",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        5184,
+        1616
+      ],
+      "id": "07825d27-9947-4811-a013-83d3d02a14a4",
+      "name": "Approve & Send",
+      "webhookId": "154acfc0-7e3c-41e5-9bd2-b1f657fabe5f"
+    },
+    {
+      "parameters": {
+        "path": "89c148a9-8b71-434c-a241-9b5542f8cf6a",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        5184,
+        1168
+      ],
+      "id": "cbf37098-fc1d-40ea-9dba-a2e6cedbd52a",
+      "name": "Discard",
+      "webhookId": "89c148a9-8b71-434c-a241-9b5542f8cf6a"
+    },
+    {
+      "parameters": {
+        "path": "f496bca8-d9c5-4c8d-9103-5bf7674edefa",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        5184,
+        1392
+      ],
+      "id": "786c6d42-7035-4f3e-949d-acccc1bede12",
+      "name": "View in Browser",
+      "webhookId": "f496bca8-d9c5-4c8d-9103-5bf7674edefa"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "2102c097-095e-44e3-9ec2-44b0b233309e",
+              "leftValue": "={{ $vars.STAKEHOLDER_EMAIL_REQUIRE_PREVIEW }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        6304,
+        1936
+      ],
+      "id": "8a8fac3f-0046-4d0a-b3af-ab9a31cffde8",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "sendTo": "hire.reid.collins@gmail.com",
+        "subject": "={{ $('Parse Email Content').item.json.subject }}",
+        "message": "={{ $('Parse Email Content').first().json.previewHtmlBody }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        6528,
+        1840
+      ],
+      "id": "197b9cfa-5bb9-4d5e-ac85-47ccaa506a86",
+      "name": "Preview Email",
+      "webhookId": "d2a8eaa4-9b27-4015-ab6d-ae68cb25bfe9",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "UOoO7YKHTG3pHNUU",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "hire.reid.collins@gmail.com",
+        "subject": "={{ $json.subject }}",
+        "message": "={{ $json.htmlBody }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        5856,
+        1616
+      ],
+      "id": "99383a59-085b-4388-add4-6880ffb458b4",
+      "name": "Send a message",
+      "webhookId": "e5498a84-ff72-40d0-8db7-3f36293cdea7",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "UOoO7YKHTG3pHNUU",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://hooks.slack.com/services/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",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"text\": \"⚠️ *Stakeholder status email was discarded.* The weekly email was not sent to stakeholders.\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        5408,
+        1168
+      ],
+      "id": "6e143dfa-1f3d-4707-a41f-e2ebd4aaab44",
+      "name": "HTTP Request2"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.htmlBody }}\n",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        5632,
+        1392
+      ],
+      "id": "837c5ca7-7aa5-4585-87b6-01fb7f7946dc",
+      "name": "Render HTML Webook Response"
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "dataTableId": {
+          "__rl": true,
+          "value": "BdFlx2Z08XpbrzB1",
+          "mode": "list",
+          "cachedResultName": "pending_email",
+          "cachedResultUrl": "/projects/KS1hIwckJrQLopyw/datatables/BdFlx2Z08XpbrzB1"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyValue": "1"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "emailSent": false,
+            "subject": "={{ $('Parse Email Content').item.json.subject }}",
+            "htmlBody": "={{ $('Parse Email Content').item.json.htmlBody }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "subject",
+              "displayName": "subject",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "htmlBody",
+              "displayName": "htmlBody",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "emailSent",
+              "displayName": "emailSent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "boolean",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        6752,
+        1840
+      ],
+      "id": "3a6983e0-8a48-4b8e-a9ed-716fff607bf0",
+      "name": "Upsert row(s)"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "BdFlx2Z08XpbrzB1",
+          "mode": "list",
+          "cachedResultName": "pending_email",
+          "cachedResultUrl": "/projects/KS1hIwckJrQLopyw/datatables/BdFlx2Z08XpbrzB1"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyValue": "1"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        5408,
+        1392
+      ],
+      "id": "de947ee8-4001-4fb1-a9e4-0e904820adb7",
+      "name": "Get row(s)"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "BdFlx2Z08XpbrzB1",
+          "mode": "list",
+          "cachedResultName": "pending_email",
+          "cachedResultUrl": "/projects/KS1hIwckJrQLopyw/datatables/BdFlx2Z08XpbrzB1"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyValue": "1"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        5408,
+        1616
+      ],
+      "id": "5151eed7-95dc-4d8e-bcd4-993581cecbf3",
+      "name": "Get row(s)1"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "value": "BdFlx2Z08XpbrzB1",
+          "mode": "list",
+          "cachedResultName": "pending_email",
+          "cachedResultUrl": "/projects/KS1hIwckJrQLopyw/datatables/BdFlx2Z08XpbrzB1"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyValue": "1"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "emailSent": true
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "subject",
+              "displayName": "subject",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "htmlBody",
+              "displayName": "htmlBody",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "emailSent",
+              "displayName": "emailSent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "boolean",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        5632,
+        1616
+      ],
+      "id": "978d261b-750f-4bf7-90d4-4d76f86c54e4",
+      "name": "Update row(s)"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://hooks.slack.com/services/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",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"text\": \"✅ *Stakeholder status email was approved and sent.* The weekly email has been delivered to stakeholders.\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        6080,
+        1616
+      ],
+      "id": "c3cbff3f-51a7-44ab-b9fa-e2264b52a89d",
+      "name": "HTTP Request3"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "value": "BdFlx2Z08XpbrzB1",
+          "mode": "list",
+          "cachedResultName": "pending_email",
+          "cachedResultUrl": "/projects/KS1hIwckJrQLopyw/datatables/BdFlx2Z08XpbrzB1"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyValue": "1"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "emailSent": true
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "subject",
+              "displayName": "subject",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "htmlBody",
+              "displayName": "htmlBody",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "emailSent",
+              "displayName": "emailSent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "boolean",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        5616,
+        1168
+      ],
+      "id": "8ba89e95-09b3-4c3e-a9c6-90298d5979ec",
+      "name": "Update row(s)1"
     }
   ],
   "pinData": {},
@@ -290,7 +741,7 @@
       "main": [
         [
           {
-            "node": "Gmail — Send Status Email",
+            "node": "If",
             "type": "main",
             "index": 0
           }
@@ -329,6 +780,123 @@
           }
         ]
       ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Preview Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Gmail — Send Status Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preview Email": {
+      "main": [
+        [
+          {
+            "node": "Upsert row(s)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approve & Send": {
+      "main": [
+        [
+          {
+            "node": "Get row(s)1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discard": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "View in Browser": {
+      "main": [
+        [
+          {
+            "node": "Get row(s)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s)": {
+      "main": [
+        [
+          {
+            "node": "Render HTML Webook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s)1": {
+      "main": [
+        [
+          {
+            "node": "Update row(s)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update row(s)": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a message": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request2": {
+      "main": [
+        [
+          {
+            "node": "Update row(s)1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
@@ -337,10 +905,9 @@
     "binaryMode": "separate",
     "timeSavedMode": "fixed",
     "callerPolicy": "workflowsFromSameOwner",
-    "executionTimeout": -1,
     "availableInMCP": false
   },
-  "versionId": "a78b1816-d4b8-47d2-a285-3682d0beddff",
+  "versionId": "b2ef1121-33c9-433f-8f0c-a4879ef4a0c3",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "e76c71c99645109aec7e39fa4c33cdf40c88a2bf41ffac722edec50922f704ca"

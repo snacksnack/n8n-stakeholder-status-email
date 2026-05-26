@@ -29,7 +29,7 @@ Every Friday at 4pm ET:
 
 Ticket numbers in tables link directly to Jira.
 
-## Preview & approval gate (RC1-56 — pending)
+## Preview & approval gate (RC1-56)
 
 For sensitive projects (C-suite audience), a human-in-the-loop approval gate can be enabled via the `REQUIRE_PREVIEW` flag.
 
@@ -42,7 +42,7 @@ When `REQUIRE_PREVIEW = true`:
    - **View in browser** — opens the rendered HTML email in your browser
    - **Discard** — cancels the send and posts a Slack notification
 3. Clicking Approve or Discard hits an n8n Webhook node
-4. If neither is clicked within 45 minutes, the workflow auto-sends anyway
+4. If neither is clicked, the email does not send. A missed Friday send is recoverable in the following week's update; an unwanted send to C-suite stakeholders is not. See Decision 10 in the Decision Log for the full rationale.
 
 ### Mobile approval
 
@@ -142,6 +142,8 @@ n8n-stakeholder-status-email/
 - **Epic filter in Code node** — Notion query fetches all RC1 tickets; filtering to RC1-31 happens in the Aggregate & Summarize Data Code node, keeping the Notion query generic and reusable
 - **REQUIRE_PREVIEW flag** — stored in n8n Variables for toggle without code changes; enables approval gate for sensitive C-suite-facing projects
 - **n8n Cloud migration** — required for REQUIRE_PREVIEW feature so webhook approval links work from any device including mobile
+- **Data Table for approval handoff** — email content (subject, htmlBody) is stored in an n8n Data Table (`pending_email`) when the preview is sent and retrieved by the Approve & Send and View in Browser webhooks. Static Data was tried first but only persists across production executions, not test executions, making development iteration painful
+- **No auto-send fallback** — the preview gate intentionally does not auto-send if Approve is not clicked. A missed send is recoverable; an unwanted send to C-suite stakeholders is not. Earlier prototypes included a 45-minute Wait + fallback Gmail node but introduced a race condition between the Wait expiration and the Discard webhook (see Decision 10)
 
 ## Known issues & workarounds
 
