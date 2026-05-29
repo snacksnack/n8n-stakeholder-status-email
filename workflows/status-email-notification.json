@@ -189,42 +189,6 @@
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "https://hooks.slack.com/services/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",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={\n  \"text\": \"✅ Weekly status email sent!\\nSubject: {{ $json.subject }}\\nSent to stakeholders at {{ $now.toFormat('h:mm a') }}\"\n}",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.4,
-      "position": [
-        6752,
-        2032
-      ],
-      "id": "fdcb76ac-452a-4ceb-9c2c-0bad0f41de1c",
-      "name": "HTTP Request"
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "https://hooks.slack.com/services/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",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={\n  \"text\": \"✅ Weekly status email sent!\\nSubject: {{ $json.subject }}\\nSent to stakeholders at {{ $now.toFormat('h:mm a') }}\"\n}",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.4,
-      "position": [
-        5632,
-        2256
-      ],
-      "id": "88ab623d-e24f-410d-8868-b0f3fa6b8b35",
-      "name": "HTTP Request1"
-    },
-    {
-      "parameters": {
         "path": "154acfc0-7e3c-41e5-9bd2-b1f657fabe5f",
         "options": {}
       },
@@ -349,24 +313,6 @@
           "name": "Gmail account"
         }
       }
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "https://hooks.slack.com/services/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",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "{\n  \"text\": \"⚠️ *Stakeholder status email was discarded.* The weekly email was not sent to stakeholders.\"\n}",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.4,
-      "position": [
-        5408,
-        1168
-      ],
-      "id": "6e143dfa-1f3d-4707-a41f-e2ebd4aaab44",
-      "name": "HTTP Request2"
     },
     {
       "parameters": {
@@ -589,24 +535,6 @@
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "https://hooks.slack.com/services/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",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "{\n  \"text\": \"✅ *Stakeholder status email was approved and sent.* The weekly email has been delivered to stakeholders.\"\n}",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.4,
-      "position": [
-        6080,
-        1616
-      ],
-      "id": "c3cbff3f-51a7-44ab-b9fa-e2264b52a89d",
-      "name": "HTTP Request3"
-    },
-    {
-      "parameters": {
         "operation": "update",
         "dataTableId": {
           "__rl": true,
@@ -673,6 +601,78 @@
       ],
       "id": "8ba89e95-09b3-4c3e-a9c6-90298d5979ec",
       "name": "Update row(s)1"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $vars.SLACKBOT_WEBHOOK }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"text\": \"✅ Weekly status email sent!\\nSubject: {{ $json.subject }}\\nSent to stakeholders at {{ $now.toFormat('h:mm a') }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        5632,
+        2256
+      ],
+      "id": "88ab623d-e24f-410d-8868-b0f3fa6b8b35",
+      "name": "Slack — Error Alert"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $vars.SLACKBOT_WEBHOOK }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"text\": \"⚠️ *Stakeholder status email was discarded.* The weekly email was not sent to stakeholders.\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        5408,
+        1168
+      ],
+      "id": "6e143dfa-1f3d-4707-a41f-e2ebd4aaab44",
+      "name": "Slack — Email Discarded"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $vars.SLACKBOT_WEBHOOK }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"text\": \"✅ *Stakeholder status email was approved and sent.* The weekly email has been delivered to stakeholders.\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        6080,
+        1616
+      ],
+      "id": "c3cbff3f-51a7-44ab-b9fa-e2264b52a89d",
+      "name": "Slack -- Email Approved"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $vars.SLACKBOT_WEBHOOK }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"text\": \"✅ Weekly status email sent!\\nSubject: {{ $json.subject }}\\nSent to stakeholders at {{ $now.toFormat('h:mm a') }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        6752,
+        2032
+      ],
+      "id": "fdcb76ac-452a-4ceb-9c2c-0bad0f41de1c",
+      "name": "Slack - Email Sent"
     }
   ],
   "pinData": {},
@@ -752,7 +752,7 @@
       "main": [
         [
           {
-            "node": "HTTP Request",
+            "node": "Slack - Email Sent",
             "type": "main",
             "index": 0
           }
@@ -774,7 +774,7 @@
       "main": [
         [
           {
-            "node": "HTTP Request1",
+            "node": "Slack — Error Alert",
             "type": "main",
             "index": 0
           }
@@ -825,7 +825,7 @@
       "main": [
         [
           {
-            "node": "HTTP Request2",
+            "node": "Slack — Email Discarded",
             "type": "main",
             "index": 0
           }
@@ -880,14 +880,14 @@
       "main": [
         [
           {
-            "node": "HTTP Request3",
+            "node": "Slack -- Email Approved",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "HTTP Request2": {
+    "Slack — Email Discarded": {
       "main": [
         [
           {
@@ -907,7 +907,7 @@
     "callerPolicy": "workflowsFromSameOwner",
     "availableInMCP": false
   },
-  "versionId": "b2ef1121-33c9-433f-8f0c-a4879ef4a0c3",
+  "versionId": "641f1687-f956-4933-9022-0505d6f4c568",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "e76c71c99645109aec7e39fa4c33cdf40c88a2bf41ffac722edec50922f704ca"
