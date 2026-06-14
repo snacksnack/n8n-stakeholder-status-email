@@ -1,0 +1,79 @@
+{
+  "name": "Incident Summary Poller",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "field": "minutes", "minutesInterval": 1 }
+          ]
+        }
+      },
+      "id": "7c1f8a90-1d2e-4a11-9b33-001122334455",
+      "name": "Every Minute",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.example.com/incidents?status=open",
+        "options": {}
+      },
+      "id": "8d2e9ab1-2e3f-4b22-ac44-112233445566",
+      "name": "Fetch Open Incidents",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [420, 300]
+    },
+    {
+      "parameters": {
+        "batchSize": 0,
+        "options": {}
+      },
+      "id": "9e3fabc2-3f40-4c33-bd55-223344556677",
+      "name": "Loop Over Incidents",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "workflowId": "incident-summarizer-sub",
+        "options": {}
+      },
+      "id": "af40bcd3-4051-4d44-ce66-334455667788",
+      "name": "Summarize Incident",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [860, 300]
+    },
+    {
+      "parameters": {
+        "channel": "#incidents",
+        "text": "={{ $json.summary }}"
+      },
+      "id": "b051cde4-5162-4e55-df77-445566778899",
+      "name": "Post Summary to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.1,
+      "position": [1080, 300]
+    }
+  ],
+  "connections": {
+    "Every Minute": {
+      "main": [[{ "node": "Fetch Open Incidents", "type": "main", "index": 0 }]]
+    },
+    "Fetch Open Incidents": {
+      "main": [[{ "node": "Loop Over Incidents", "type": "main", "index": 0 }]]
+    },
+    "Loop Over Incidents": {
+      "main": [[{ "node": "Summarize Incident", "type": "main", "index": 0 }]]
+    },
+    "Summarize Incident": {
+      "main": [[{ "node": "Post Summary to Slack", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {},
+  "active": false
+}
