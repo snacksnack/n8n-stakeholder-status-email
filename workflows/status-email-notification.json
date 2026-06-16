@@ -54,7 +54,10 @@
           "id": "wKSlOyLDML1EJMdq",
           "name": "Header Auth account"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {
@@ -78,11 +81,14 @@
           "id": "TcsjlaOzszzBfuVf",
           "name": "Jira SW Cloud account"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {
-        "jsCode": "// Collect outputs from both Notion and Jira nodes\nconst notionData = $('Notion — Get All RC1 Tasks').first().json;\nlet jiraItems = [];\ntry {\n  jiraItems = $('Jira — Get This Week\\'s Updates').all();\n} catch(e) {\n  jiraItems = [];\n}\n\n// Process Notion pages — filter to RC1-31 epic only\nconst pages = notionData.results || [];\nconst rc1Pages = pages.filter(p => {\n  const epic = p.properties?.Epic?.rich_text?.[0]?.plain_text;\n  return epic === 'RC1-31';\n});\n\nconst taskSummary = rc1Pages.map(p => {\n  const props = p.properties || {};\n  return {\n    name: props.Name?.title?.[0]?.plain_text || 'Untitled',\n    jiraKey: props['Jira Key']?.rich_text?.[0]?.plain_text || '',\n    status: props.Status?.select?.name || 'Unknown',\n    priority: props.Priority?.select?.name || 'Unknown',\n    assignee: props.Assignee?.rich_text?.[0]?.plain_text || 'Unassigned'\n  };\n});\n\n// Group by status\nconst done = taskSummary.filter(t => t.status === 'Done');\nconst inProgress = taskSummary.filter(t => t.status === 'In Progress');\nconst inReview = taskSummary.filter(t => t.status === 'In Review');\nconst toDo = taskSummary.filter(t => t.status === 'To Do');\nconst blocked = taskSummary.filter(t => t.status === 'Blocked');\n\n// Weekly Jira updates\nconst weeklyUpdates = jiraItems.map(i => ({\n  key: i.json.key,\n  summary: i.json.fields?.summary,\n  status: i.json.fields?.status?.name,\n  assignee: i.json.fields?.assignee?.displayName || 'Unassigned'\n}));\n\n// Health\nconst total = taskSummary.length;\nconst doneCount = done.length;\nconst completionPct = total > 0 ? Math.round((doneCount / total) * 100) : 0;\nlet health = '🟢 On Track';\nif (blocked.length > 0) health = '🔴 At Risk';\nelse if (completionPct < 50 && inProgress.length === 0) health = '🟡 Needs Attention';\n\n// Table styles\nconst tableStyle = 'border-collapse:collapse;width:100%;margin-bottom:24px;font-family:Arial,sans-serif;font-size:13px;';\nconst thStyle = 'background:#4472C4;color:white;padding:10px 12px;text-align:left;font-weight:600;';\nconst tdStyle = 'padding:8px 12px;border-bottom:1px solid #e0e0e0;vertical-align:top;';\nconst tdAltStyle = 'padding:8px 12px;border-bottom:1px solid #e0e0e0;background:#f5f8ff;vertical-align:top;';\n\n// Build HTML table helper\nfunction buildTable(title, emoji, rows) {\n  if (rows.length === 0) return '';\n  let html = `<h3 style=\"color:#2c3e50;margin-top:24px;\">${emoji} ${title}</h3>`;\n  html += `<table style=\"${tableStyle}\">`;\n  html += `<tr><th style=\"${thStyle}\">Ticket</th><th style=\"${thStyle}\">Description</th><th style=\"${thStyle}\">Priority</th><th style=\"${thStyle}\">Assignee</th></tr>`;\n  rows.forEach((r, i) => {\n    const td = i % 2 === 0 ? tdStyle : tdAltStyle;\n    const jiraUrl = `https://hirereidcollins.atlassian.net/browse/${r.jiraKey}`;\n    html += `<tr>\n      <td style=\"${td}\"><a href=\"${jiraUrl}\" style=\"color:#4472C4;text-decoration:none;\">${r.jiraKey}</a></td>\n      <td style=\"${td}\">${r.name}</td>\n      <td style=\"${td}\">${r.priority}</td>\n      <td style=\"${td}\">${r.assignee}</td>\n    </tr>`;\n  });\n  html += '</table>';\n  return html;\n}\n\n// Build full tables HTML\nconst tablesHtml = [\n  buildTable('In Progress', '🔄', inProgress),\n  buildTable('In Review', '👀', inReview),\n  buildTable('Blocked', '🚫', blocked),\n  buildTable('Up Next', '📋', toDo),\n  buildTable('Completed This Week', '✅', done)\n].join('');\n\nconst reportDate = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });\n\nreturn [{\n  json: {\n    health,\n    completionPct,\n    total,\n    doneCount,\n    inProgressCount: inProgress.length,\n    inReviewCount: inReview.length,\n    blockedCount: blocked.length,\n    toDoCount: toDo.length,\n    tablesHtml,\n    reportDate,\n    weeklyUpdates\n  }\n}];"
+        "jsCode": "// Collect outputs from both Notion and Jira nodes\nconst notionData = $('Notion — Get All RC1 Tasks').first().json;\nlet jiraItems = [];\ntry {\n  jiraItems = $('Jira — Get This Week\\'s Updates').all();\n} catch(e) {\n  console.error('[status-email] Jira fetch failed:', e.message);\n  jiraItems = [];\n}\n\n// Process Notion pages — filter to RC1-31 epic only\nconst pages = notionData.results || [];\nconst rc1Pages = pages.filter(p => {\n  const epic = p.properties?.Epic?.rich_text?.[0]?.plain_text;\n  return epic === 'RC1-31';\n});\n\nif (rc1Pages.length === 0) {\n  throw new Error(`[status-email] No RC1-31 tasks found (Notion returned ${pages.length} page(s), 0 matched Epic RC1-31). Aborting to avoid sending a blank status email.`);\n}\n\nconst taskSummary = rc1Pages.map(p => {\n  const props = p.properties || {};\n  return {\n    name: props.Name?.title?.[0]?.plain_text || 'Untitled',\n    jiraKey: props['Jira Key']?.rich_text?.[0]?.plain_text || '',\n    status: props.Status?.select?.name || 'Unknown',\n    priority: props.Priority?.select?.name || 'Unknown',\n    assignee: props.Assignee?.rich_text?.[0]?.plain_text || 'Unassigned'\n  };\n});\n\n// Group by status\nconst done = taskSummary.filter(t => t.status === 'Done');\nconst inProgress = taskSummary.filter(t => t.status === 'In Progress');\nconst inReview = taskSummary.filter(t => t.status === 'In Review');\nconst toDo = taskSummary.filter(t => t.status === 'To Do');\nconst blocked = taskSummary.filter(t => t.status === 'Blocked');\n\n// Weekly Jira updates\nconst weeklyUpdates = jiraItems.map(i => ({\n  key: i.json.key,\n  summary: i.json.fields?.summary,\n  status: i.json.fields?.status?.name,\n  assignee: i.json.fields?.assignee?.displayName || 'Unassigned'\n}));\n\n// Health\nconst total = taskSummary.length;\nconst doneCount = done.length;\nconst completionPct = total > 0 ? Math.round((doneCount / total) * 100) : 0;\nlet health = '🟢 On Track';\nif (blocked.length > 0) health = '🔴 At Risk';\nelse if (completionPct < 50 && inProgress.length === 0) health = '🟡 Needs Attention';\n\n// Table styles\nconst tableStyle = 'border-collapse:collapse;width:100%;margin-bottom:24px;font-family:Arial,sans-serif;font-size:13px;';\nconst thStyle = 'background:#4472C4;color:white;padding:10px 12px;text-align:left;font-weight:600;';\nconst tdStyle = 'padding:8px 12px;border-bottom:1px solid #e0e0e0;vertical-align:top;';\nconst tdAltStyle = 'padding:8px 12px;border-bottom:1px solid #e0e0e0;background:#f5f8ff;vertical-align:top;';\n\n// Build HTML table helper\nfunction buildTable(title, emoji, rows) {\n  if (rows.length === 0) return '';\n  let html = `<h3 style=\"color:#2c3e50;margin-top:24px;\">${emoji} ${title}</h3>`;\n  html += `<table style=\"${tableStyle}\">`;\n  html += `<tr><th style=\"${thStyle}\">Ticket</th><th style=\"${thStyle}\">Description</th><th style=\"${thStyle}\">Priority</th><th style=\"${thStyle}\">Assignee</th></tr>`;\n  rows.forEach((r, i) => {\n    const td = i % 2 === 0 ? tdStyle : tdAltStyle;\n    const jiraUrl = `https://hirereidcollins.atlassian.net/browse/${r.jiraKey}`;\n    html += `<tr>\n      <td style=\"${td}\"><a href=\"${jiraUrl}\" style=\"color:#4472C4;text-decoration:none;\">${r.jiraKey}</a></td>\n      <td style=\"${td}\">${r.name}</td>\n      <td style=\"${td}\">${r.priority}</td>\n      <td style=\"${td}\">${r.assignee}</td>\n    </tr>`;\n  });\n  html += '</table>';\n  return html;\n}\n\n// Build full tables HTML\nconst tablesHtml = [\n  buildTable('In Progress', '🔄', inProgress),\n  buildTable('In Review', '👀', inReview),\n  buildTable('Blocked', '🚫', blocked),\n  buildTable('Up Next', '📋', toDo),\n  buildTable('Completed This Week', '✅', done)\n].join('');\n\n// Weekly Jira activity table (renders data already fetched from Jira)\nfunction buildJiraTable(rows) {\n  if (!rows || rows.length === 0) return '';\n  let html = `<h3 style=\"color:#2c3e50;margin-top:24px;\">🛠 This Week's Jira Activity</h3>`;\n  html += `<table style=\"${tableStyle}\">`;\n  html += `<tr><th style=\"${thStyle}\">Ticket</th><th style=\"${thStyle}\">Summary</th><th style=\"${thStyle}\">Status</th><th style=\"${thStyle}\">Assignee</th></tr>`;\n  rows.forEach((r, i) => {\n    const td = i % 2 === 0 ? tdStyle : tdAltStyle;\n    const jiraUrl = `https://hirereidcollins.atlassian.net/browse/${r.key}`;\n    html += `<tr>\n      <td style=\"${td}\"><a href=\"${jiraUrl}\" style=\"color:#4472C4;text-decoration:none;\">${r.key}</a></td>\n      <td style=\"${td}\">${r.summary || ''}</td>\n      <td style=\"${td}\">${r.status || ''}</td>\n      <td style=\"${td}\">${r.assignee || ''}</td>\n    </tr>`;\n  });\n  html += '</table>';\n  return html;\n}\nconst jiraActivityHtml = buildJiraTable(weeklyUpdates);\n\nconst reportDate = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });\n\nreturn [{\n  json: {\n    health,\n    completionPct,\n    total,\n    doneCount,\n    inProgressCount: inProgress.length,\n    inReviewCount: inReview.length,\n    blockedCount: blocked.length,\n    toDoCount: toDo.length,\n    tablesHtml,\n    jiraActivityHtml,\n    reportDate,\n    weeklyUpdates\n  }\n}];"
       },
       "id": "8b6e7076-132f-4756-9f6f-25e2c07fc863",
       "name": "Aggregate & Summarize Data",
@@ -122,11 +128,14 @@
       "position": [
         5856,
         1936
-      ]
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
     },
     {
       "parameters": {
-        "jsCode": "const response = $input.first().json;\nlet text = response.content?.find(b => b.type === 'text')?.text || '';\n// Strip markdown fences\ntext = text.replace(/^```html\\n?/i, '').replace(/```$/i, '').trim();\n// Extract subject\nconst subjectMatch = text.match(/SUBJECT:\\s*(.+?)(\\n|<)/);\nconst subject = subjectMatch ? subjectMatch[1].trim() : 'AI Incident Summarizer — Weekly Status Update';\n// Extract executive summary HTML (everything after the SUBJECT line)\nconst execSummary = text.replace(/SUBJECT:\\s*.+?(\\n|(?=<))/, '').trim();\n// Get pre-built tables from Aggregate node\nconst tablesHtml = $('Aggregate & Summarize Data').first().json.tablesHtml;\nconst reportDate = $('Aggregate & Summarize Data').first().json.reportDate;\nconst health = $('Aggregate & Summarize Data').first().json.health;\nconst completionPct = $('Aggregate & Summarize Data').first().json.completionPct;\nconst doneCount = $('Aggregate & Summarize Data').first().json.doneCount;\nconst total = $('Aggregate & Summarize Data').first().json.total;\n\n// Shared email content\nconst emailContent = `\n  <h1 style=\"color:#2c3e50;border-bottom:2px solid #4472C4;padding-bottom:8px;\">\n    AI Incident Summarizer — Weekly Status Report\n  </h1>\n  <p style=\"color:#666;font-size:12px;\">Week ending ${reportDate}</p>\n  ${execSummary}\n  <h2 style=\"color:#2c3e50;margin-top:32px;\">Project Status</h2>\n  <table style=\"border-collapse:collapse;width:100%;margin-bottom:24px;\">\n    <tr>\n      <td style=\"padding:12px;background:#f5f5f5;border:1px solid #e0e0e0;width:33%;\">\n        <div style=\"font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;\">Overall Health</div>\n        <div style=\"font-size:20px;font-weight:600;margin-top:4px;\">${health}</div>\n      </td>\n      <td style=\"padding:12px;background:#f5f5f5;border:1px solid #e0e0e0;width:33%;\">\n        <div style=\"font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;\">Completion</div>\n        <div style=\"font-size:20px;font-weight:600;margin-top:4px;\">${completionPct}%</div>\n        <div style=\"font-size:12px;color:#888;\">${doneCount} of ${total} tickets closed</div>\n      </td>\n      <td style=\"padding:12px;background:#f5f5f5;border:1px solid #e0e0e0;width:33%;\">\n        <div style=\"font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;\">Report Date</div>\n        <div style=\"font-size:14px;font-weight:600;margin-top:4px;\">${reportDate}</div>\n      </td>\n    </tr>\n  </table>\n  ${tablesHtml}\n  <p style=\"margin-top:32px;font-size:13px;color:#444;\">\n    Best regards,<br>\n    <strong>Reid Collins</strong><br>\n    Senior Technical Program Manager\n  </p>\n  <p style=\"font-size:11px;color:#aaa;border-top:1px solid #eee;padding-top:8px;margin-top:16px;\">\n    This report was generated automatically by n8n + Claude AI\n  </p>\n`;\n\n// Clean version for stakeholders (no approval buttons)\nconst htmlBody = `\n<div style=\"font-family:Arial,sans-serif;max-width:800px;margin:0 auto;padding:24px;\">\n  ${emailContent}\n</div>\n`;\n\n// Preview version with approval buttons (sent to Reid only)\nconst previewHtmlBody = `\n<div style=\"font-family:Arial,sans-serif;max-width:800px;margin:0 auto;padding:24px;\">\n  ${emailContent}\n  <div style=\"margin-top:24px;padding:16px;background:#f0f4ff;border:1px solid #c0cfe8;border-radius:8px;\">\n    <p style=\"margin:0 0 12px 0;font-weight:bold;color:#2c3e50;\">⚠️ Preview — Not yet sent to stakeholders</p>\n    <a href=\"https://hihelloreid.app.n8n.cloud/webhook/154acfc0-7e3c-41e5-9bd2-b1f657fabe5f\" style=\"display:inline-block;margin-right:12px;padding:10px 20px;background:#27ae60;color:white;text-decoration:none;border-radius:4px;\">✅ Approve & Send</a>\n    <a href=\"https://hihelloreid.app.n8n.cloud/webhook/f496bca8-d9c5-4c8d-9103-5bf7674edefa\" style=\"display:inline-block;margin-right:12px;padding:10px 20px;background:#2c3e50;color:white;text-decoration:none;border-radius:4px;\">👁 View in Browser</a>\n    <a href=\"https://hihelloreid.app.n8n.cloud/webhook/89c148a9-8b71-434c-a241-9b5542f8cf6a\" style=\"display:inline-block;padding:10px 20px;background:#c0392b;color:white;text-decoration:none;border-radius:4px;\">🗑 Discard</a>\n  </div>\n</div>\n`;\n\nreturn [{ json: { subject, body: htmlBody, htmlBody, previewHtmlBody } }];"
+        "jsCode": "const response = $input.first().json;\nlet text = response.content?.find(b => b.type === 'text')?.text || '';\n// Strip markdown fences\ntext = text.replace(/^```html\\n?/i, '').replace(/```$/i, '').trim();\n// Extract subject\nconst subjectMatch = text.match(/SUBJECT:\\s*(.+?)(\\n|<)/);\nconst subject = subjectMatch ? subjectMatch[1].trim() : 'AI Incident Summarizer — Weekly Status Update';\n// Extract executive summary HTML (everything after the SUBJECT line)\nconst execSummary = text.replace(/SUBJECT:\\s*.+?(\\n|(?=<))/, '').trim();\n// Get pre-built tables from Aggregate node\nconst tablesHtml = $('Aggregate & Summarize Data').first().json.tablesHtml;\nconst jiraActivityHtml = $('Aggregate & Summarize Data').first().json.jiraActivityHtml;\nconst reportDate = $('Aggregate & Summarize Data').first().json.reportDate;\nconst health = $('Aggregate & Summarize Data').first().json.health;\nconst completionPct = $('Aggregate & Summarize Data').first().json.completionPct;\nconst doneCount = $('Aggregate & Summarize Data').first().json.doneCount;\nconst total = $('Aggregate & Summarize Data').first().json.total;\n\n// Shared email content\nconst emailContent = `\n  <h1 style=\"color:#2c3e50;border-bottom:2px solid #4472C4;padding-bottom:8px;\">\n    AI Incident Summarizer — Weekly Status Report\n  </h1>\n  <p style=\"color:#666;font-size:12px;\">Week ending ${reportDate}</p>\n  ${execSummary}\n  <h2 style=\"color:#2c3e50;margin-top:32px;\">Project Status</h2>\n  <table style=\"border-collapse:collapse;width:100%;margin-bottom:24px;\">\n    <tr>\n      <td style=\"padding:12px;background:#f5f5f5;border:1px solid #e0e0e0;width:33%;\">\n        <div style=\"font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;\">Overall Health</div>\n        <div style=\"font-size:20px;font-weight:600;margin-top:4px;\">${health}</div>\n      </td>\n      <td style=\"padding:12px;background:#f5f5f5;border:1px solid #e0e0e0;width:33%;\">\n        <div style=\"font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;\">Completion</div>\n        <div style=\"font-size:20px;font-weight:600;margin-top:4px;\">${completionPct}%</div>\n        <div style=\"font-size:12px;color:#888;\">${doneCount} of ${total} tickets closed</div>\n      </td>\n      <td style=\"padding:12px;background:#f5f5f5;border:1px solid #e0e0e0;width:33%;\">\n        <div style=\"font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;\">Report Date</div>\n        <div style=\"font-size:14px;font-weight:600;margin-top:4px;\">${reportDate}</div>\n      </td>\n    </tr>\n  </table>\n  ${tablesHtml}\n  ${jiraActivityHtml}\n  <p style=\"margin-top:32px;font-size:13px;color:#444;\">\n    Best regards,<br>\n    <strong>Reid Collins</strong><br>\n    Senior Technical Program Manager\n  </p>\n  <p style=\"font-size:11px;color:#aaa;border-top:1px solid #eee;padding-top:8px;margin-top:16px;\">\n    This report was generated automatically by n8n + Claude AI\n  </p>\n`;\n\n// Clean version for stakeholders (no approval buttons)\nconst htmlBody = `\n<div style=\"font-family:Arial,sans-serif;max-width:800px;margin:0 auto;padding:24px;\">\n  ${emailContent}\n</div>\n`;\n\n// Preview version with approval buttons (sent to Reid only)\nconst previewHtmlBody = `\n<div style=\"font-family:Arial,sans-serif;max-width:800px;margin:0 auto;padding:24px;\">\n  ${emailContent}\n  <div style=\"margin-top:24px;padding:16px;background:#f0f4ff;border:1px solid #c0cfe8;border-radius:8px;\">\n    <p style=\"margin:0 0 12px 0;font-weight:bold;color:#2c3e50;\">⚠️ Preview — Not yet sent to stakeholders</p>\n    <a href=\"https://hihelloreid.app.n8n.cloud/webhook/154acfc0-7e3c-41e5-9bd2-b1f657fabe5f\" style=\"display:inline-block;margin-right:12px;padding:10px 20px;background:#27ae60;color:white;text-decoration:none;border-radius:4px;\">✅ Approve & Send</a>\n    <a href=\"https://hihelloreid.app.n8n.cloud/webhook/f496bca8-d9c5-4c8d-9103-5bf7674edefa\" style=\"display:inline-block;margin-right:12px;padding:10px 20px;background:#2c3e50;color:white;text-decoration:none;border-radius:4px;\">👁 View in Browser</a>\n    <a href=\"https://hihelloreid.app.n8n.cloud/webhook/89c148a9-8b71-434c-a241-9b5542f8cf6a\" style=\"display:inline-block;padding:10px 20px;background:#c0392b;color:white;text-decoration:none;border-radius:4px;\">🗑 Discard</a>\n  </div>\n</div>\n`;\n\nreturn [{ json: { subject, body: htmlBody, htmlBody, previewHtmlBody } }];"
       },
       "id": "dbf752fd-b7ef-4719-bc92-12375343f530",
       "name": "Parse Email Content",
@@ -161,7 +170,10 @@
           "id": "UOoO7YKHTG3pHNUU",
           "name": "Gmail account"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
     },
     {
       "parameters": {},
@@ -176,7 +188,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const error = $input.first().json;\nreturn [{\n  json: {\n    message: `⚠️ Stakeholder status email failed\\nError: ${error.execution?.error?.message || 'Unknown error'}\\nTime: ${new Date().toISOString()}`\n  }\n}];"
+        "jsCode": "const e = $input.first().json;\nconst ex = e.execution || {};\nconst err = ex.error || {};\nconst failingNode = ex.lastNodeExecuted || (err.node && err.node.name) || 'unknown';\nconst msg = err.message || 'Unknown error';\nconst isEmpty = /No RC1-31 tasks/i.test(msg);\nconst event = isEmpty ? 'aborted_empty' : 'errored';\nconst ts = new Date().toISOString();\nconst slackText = `\\u26a0\\ufe0f Stakeholder status email ${isEmpty ? 'aborted (no RC1-31 tasks found)' : 'FAILED'}\\n`\n  + `Node: ${failingNode}\\n`\n  + `Error: ${msg}\\n`\n  + `Execution: ${ex.url || ex.id || 'n/a'}\\n`\n  + `Time: ${ts}`;\nconsole.error('[status-email]', event, failingNode, msg);\nreturn [{ json: {\n  event, level: 'error', message: msg, failingNode,\n  executionId: (ex.id || '').toString(), executionUrl: ex.url || '',\n  timestamp: ts, slackText\n} }];"
       },
       "id": "f61a8bf1-8b30-427d-a48a-968da4551b92",
       "name": "Format Error Message",
@@ -289,7 +301,10 @@
           "id": "UOoO7YKHTG3pHNUU",
           "name": "Gmail account"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
     },
     {
       "parameters": {
@@ -312,7 +327,10 @@
           "id": "UOoO7YKHTG3pHNUU",
           "name": "Gmail account"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
     },
     {
       "parameters": {
@@ -361,7 +379,8 @@
           "value": {
             "emailSent": false,
             "subject": "={{ $('Parse Email Content').item.json.subject }}",
-            "htmlBody": "={{ $('Parse Email Content').item.json.htmlBody }}"
+            "htmlBody": "={{ $('Parse Email Content').item.json.htmlBody }}",
+            "reportDate": "={{ $('Aggregate & Summarize Data').item.json.reportDate }}"
           },
           "matchingColumns": [],
           "schema": [
@@ -392,6 +411,16 @@
               "defaultMatch": false,
               "display": true,
               "type": "boolean",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "reportDate",
+              "displayName": "reportDate",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
               "readOnly": false,
               "removed": false
             }
@@ -553,7 +582,7 @@
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
-            "emailSent": true
+            "emailSent": false
           },
           "matchingColumns": [],
           "schema": [
@@ -608,7 +637,7 @@
         "url": "={{ $vars.SLACKBOT_WEBHOOK }}",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"text\": \"✅ Weekly status email sent!\\nSubject: {{ $json.subject }}\\nSent to stakeholders at {{ $now.toFormat('h:mm a') }}\"\n}",
+        "jsonBody": "={\n  \"text\": {{ JSON.stringify($json.slackText) }}\n}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -673,6 +702,903 @@
       ],
       "id": "fdcb76ac-452a-4ceb-9c2c-0bad0f41de1c",
       "name": "Slack - Email Sent"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "dataTableId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_email_log_TABLE_ID",
+          "mode": "list",
+          "cachedResultName": "email_log"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $now.toISO() }}",
+            "event": "preview_sent",
+            "level": "info",
+            "executionId": "={{ $execution.id }}",
+            "reportDate": "={{ $('Aggregate & Summarize Data').item.json.reportDate }}",
+            "requirePreview": "={{ $vars.STAKEHOLDER_EMAIL_REQUIRE_PREVIEW === 'true' }}",
+            "outcome": "pending",
+            "health": "={{ $('Aggregate & Summarize Data').item.json.health }}",
+            "completionPct": "={{ $('Aggregate & Summarize Data').item.json.completionPct }}",
+            "total": "={{ $('Aggregate & Summarize Data').item.json.total }}",
+            "statusCounts": "={{ JSON.stringify({ done: $('Aggregate & Summarize Data').item.json.doneCount, inProgress: $('Aggregate & Summarize Data').item.json.inProgressCount, inReview: $('Aggregate & Summarize Data').item.json.inReviewCount, blocked: $('Aggregate & Summarize Data').item.json.blockedCount, toDo: $('Aggregate & Summarize Data').item.json.toDoCount }) }}",
+            "subject": "={{ $('Parse Email Content').item.json.subject }}",
+            "detail": "Preview sent to approver; awaiting decision"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "event",
+              "displayName": "event",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "level",
+              "displayName": "level",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "executionId",
+              "displayName": "executionId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "reportDate",
+              "displayName": "reportDate",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "requirePreview",
+              "displayName": "requirePreview",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "boolean",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "outcome",
+              "displayName": "outcome",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "health",
+              "displayName": "health",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "completionPct",
+              "displayName": "completionPct",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "total",
+              "displayName": "total",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "statusCounts",
+              "displayName": "statusCounts",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "subject",
+              "displayName": "subject",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "detail",
+              "displayName": "detail",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        6976,
+        1840
+      ],
+      "id": "408e2d34-fd23-4faa-b1dd-c55b2bb30a6f",
+      "name": "Log — Preview Sent"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "dataTableId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_email_log_TABLE_ID",
+          "mode": "list",
+          "cachedResultName": "email_log"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $now.toISO() }}",
+            "event": "sent",
+            "level": "info",
+            "executionId": "={{ $execution.id }}",
+            "reportDate": "={{ $('Aggregate & Summarize Data').item.json.reportDate }}",
+            "requirePreview": "={{ $vars.STAKEHOLDER_EMAIL_REQUIRE_PREVIEW === 'true' }}",
+            "outcome": "sent",
+            "health": "={{ $('Aggregate & Summarize Data').item.json.health }}",
+            "completionPct": "={{ $('Aggregate & Summarize Data').item.json.completionPct }}",
+            "total": "={{ $('Aggregate & Summarize Data').item.json.total }}",
+            "statusCounts": "={{ JSON.stringify({ done: $('Aggregate & Summarize Data').item.json.doneCount, inProgress: $('Aggregate & Summarize Data').item.json.inProgressCount, inReview: $('Aggregate & Summarize Data').item.json.inReviewCount, blocked: $('Aggregate & Summarize Data').item.json.blockedCount, toDo: $('Aggregate & Summarize Data').item.json.toDoCount }) }}",
+            "subject": "={{ $('Parse Email Content').item.json.subject }}",
+            "detail": "Sent directly to stakeholders (no preview gate)"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "event",
+              "displayName": "event",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "level",
+              "displayName": "level",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "executionId",
+              "displayName": "executionId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "reportDate",
+              "displayName": "reportDate",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "requirePreview",
+              "displayName": "requirePreview",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "boolean",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "outcome",
+              "displayName": "outcome",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "health",
+              "displayName": "health",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "completionPct",
+              "displayName": "completionPct",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "total",
+              "displayName": "total",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "statusCounts",
+              "displayName": "statusCounts",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "subject",
+              "displayName": "subject",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "detail",
+              "displayName": "detail",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        6976,
+        2032
+      ],
+      "id": "4258a2e2-f851-4011-84da-75e8f9b8bb91",
+      "name": "Log — Sent Direct"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "dataTableId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_email_log_TABLE_ID",
+          "mode": "list",
+          "cachedResultName": "email_log"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $now.toISO() }}",
+            "event": "sent",
+            "level": "info",
+            "executionId": "={{ $execution.id }}",
+            "reportDate": "={{ $('Get row(s)1').item.json.reportDate }}",
+            "requirePreview": true,
+            "outcome": "sent",
+            "subject": "={{ $('Get row(s)1').item.json.subject }}",
+            "detail": "Approved via webhook and sent to stakeholders"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "event",
+              "displayName": "event",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "level",
+              "displayName": "level",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "executionId",
+              "displayName": "executionId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "reportDate",
+              "displayName": "reportDate",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "requirePreview",
+              "displayName": "requirePreview",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "boolean",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "outcome",
+              "displayName": "outcome",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "health",
+              "displayName": "health",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "completionPct",
+              "displayName": "completionPct",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "total",
+              "displayName": "total",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "statusCounts",
+              "displayName": "statusCounts",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "subject",
+              "displayName": "subject",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "detail",
+              "displayName": "detail",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        6304,
+        1616
+      ],
+      "id": "1d133607-d419-4bca-bc05-baec5dbe4030",
+      "name": "Log — Sent Approved"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "dataTableId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_email_log_TABLE_ID",
+          "mode": "list",
+          "cachedResultName": "email_log"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $now.toISO() }}",
+            "event": "discarded",
+            "level": "warn",
+            "executionId": "={{ $execution.id }}",
+            "reportDate": "={{ $('Get row(s)2').item.json.reportDate }}",
+            "requirePreview": true,
+            "outcome": "discarded",
+            "subject": "={{ $('Get row(s)2').item.json.subject }}",
+            "detail": "Discarded via webhook; not sent to stakeholders"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "event",
+              "displayName": "event",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "level",
+              "displayName": "level",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "executionId",
+              "displayName": "executionId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "reportDate",
+              "displayName": "reportDate",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "requirePreview",
+              "displayName": "requirePreview",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "boolean",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "outcome",
+              "displayName": "outcome",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "health",
+              "displayName": "health",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "completionPct",
+              "displayName": "completionPct",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "total",
+              "displayName": "total",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "statusCounts",
+              "displayName": "statusCounts",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "subject",
+              "displayName": "subject",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "detail",
+              "displayName": "detail",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        5840,
+        1168
+      ],
+      "id": "d416d33a-f3fb-4f09-8b8d-cd9083eb8d38",
+      "name": "Log — Discarded"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "dataTableId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_email_log_TABLE_ID",
+          "mode": "list",
+          "cachedResultName": "email_log"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $('Format Error Message').item.json.timestamp }}",
+            "event": "={{ $('Format Error Message').item.json.event }}",
+            "level": "error",
+            "executionId": "={{ $('Format Error Message').item.json.executionId }}",
+            "outcome": "errored",
+            "detail": "={{ $('Format Error Message').item.json.message }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "event",
+              "displayName": "event",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "level",
+              "displayName": "level",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "executionId",
+              "displayName": "executionId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "reportDate",
+              "displayName": "reportDate",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "requirePreview",
+              "displayName": "requirePreview",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "boolean",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "outcome",
+              "displayName": "outcome",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "health",
+              "displayName": "health",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "completionPct",
+              "displayName": "completionPct",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "total",
+              "displayName": "total",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "statusCounts",
+              "displayName": "statusCounts",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "subject",
+              "displayName": "subject",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "detail",
+              "displayName": "detail",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        5856,
+        2256
+      ],
+      "id": "2272c887-a0c4-47c1-94ea-883f18608457",
+      "name": "Log — Errored"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "BdFlx2Z08XpbrzB1",
+          "mode": "list",
+          "cachedResultName": "pending_email",
+          "cachedResultUrl": "/projects/KS1hIwckJrQLopyw/datatables/BdFlx2Z08XpbrzB1"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyValue": "1"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        5296,
+        1296
+      ],
+      "id": "e1f78ac2-5529-45a1-b0ce-7cee7977e0df",
+      "name": "Get row(s)2"
     }
   ],
   "pinData": {},
@@ -825,7 +1751,7 @@
       "main": [
         [
           {
-            "node": "Slack — Email Discarded",
+            "node": "Get row(s)2",
             "type": "main",
             "index": 0
           }
@@ -892,6 +1818,72 @@
         [
           {
             "node": "Update row(s)1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s)2": {
+      "main": [
+        [
+          {
+            "node": "Slack — Email Discarded",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update row(s)1": {
+      "main": [
+        [
+          {
+            "node": "Log — Discarded",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert row(s)": {
+      "main": [
+        [
+          {
+            "node": "Log — Preview Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack - Email Sent": {
+      "main": [
+        [
+          {
+            "node": "Log — Sent Direct",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack -- Email Approved": {
+      "main": [
+        [
+          {
+            "node": "Log — Sent Approved",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack — Error Alert": {
+      "main": [
+        [
+          {
+            "node": "Log — Errored",
             "type": "main",
             "index": 0
           }
