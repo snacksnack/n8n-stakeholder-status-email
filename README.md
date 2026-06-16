@@ -29,6 +29,8 @@ Every Friday at 4pm ET:
 
 Ticket numbers in tables link directly to Jira.
 
+**This Week's Jira Activity** — a table of RC1 child tickets updated in Jira this week (columns: Ticket, Summary, Status, Assignee). Rendered from the Jira fetch in step 2; the section is omitted if there were no Jira updates that week.
+
 ## Preview & approval gate (RC1-56)
 
 For sensitive projects (C-suite audience), a human-in-the-loop approval gate can be enabled via the `REQUIRE_PREVIEW` flag.
@@ -36,7 +38,7 @@ For sensitive projects (C-suite audience), a human-in-the-loop approval gate can
 ### How it works
 
 When `REQUIRE_PREVIEW = true`:
-1. At 3:45pm ET, a preview email is sent to `hire.reid.collins@gmail.com`
+1. When the Friday 4pm ET run fires, a preview email is sent first to `hire.reid.collins@gmail.com` (the stakeholder send does not happen until you approve)
 2. The preview email contains three links:
    - **Approve & Send** — triggers the Gmail send to stakeholders
    - **View in browser** — opens the rendered HTML email in your browser

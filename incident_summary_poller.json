@@ -5,7 +5,10 @@
       "parameters": {
         "rule": {
           "interval": [
-            { "field": "minutes", "minutesInterval": 1 }
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
           ]
         }
       },
@@ -13,7 +16,10 @@
       "name": "Every Minute",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.1,
-      "position": [200, 300]
+      "position": [
+        200,
+        300
+      ]
     },
     {
       "parameters": {
@@ -24,7 +30,10 @@
       "name": "Fetch Open Incidents",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
-      "position": [420, 300]
+      "position": [
+        420,
+        300
+      ]
     },
     {
       "parameters": {
@@ -35,7 +44,10 @@
       "name": "Loop Over Incidents",
       "type": "n8n-nodes-base.splitInBatches",
       "typeVersion": 3,
-      "position": [640, 300]
+      "position": [
+        760,
+        300
+      ]
     },
     {
       "parameters": {
@@ -46,7 +58,10 @@
       "name": "Summarize Incident",
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1,
-      "position": [860, 300]
+      "position": [
+        980,
+        300
+      ]
     },
     {
       "parameters": {
@@ -57,21 +72,80 @@
       "name": "Post Summary to Slack",
       "type": "n8n-nodes-base.slack",
       "typeVersion": 2.1,
-      "position": [1080, 300]
+      "position": [
+        1200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Dedupe guard — stops the same OPEN incident from being summarized and\n// reposted to Slack on every poll. Uses workflow static data (persists across\n// production executions). Assumes each incident has a stable unique `id`;\n// change idKey below if your incidents API uses a different field.\nconst idKey = 'id';\nconst store = $getWorkflowStaticData('global');\nconst seen = new Set(store.seenIncidentIds || []);\n\n// Normalize input: handle one-item-per-incident, an array in one item, or { incidents: [...] }\nlet incidents = [];\nfor (const item of $input.all()) {\n  const j = item.json;\n  if (Array.isArray(j)) incidents.push(...j);\n  else if (Array.isArray(j.incidents)) incidents.push(...j.incidents);\n  else incidents.push(j);\n}\n\n// Keep only incidents we haven't already posted (no id -> let it through)\nconst fresh = incidents.filter(inc => {\n  const id = inc[idKey];\n  if (id === undefined || id === null) return true;\n  return !seen.has(id);\n});\n\n// Remember what we're about to post; cap to avoid unbounded growth\nconst newIds = fresh.map(i => i[idKey]).filter(x => x !== undefined && x !== null);\nstore.seenIncidentIds = [...(store.seenIncidentIds || []), ...newIds].slice(-1000);\n\nconsole.log('[incident-poller] open:', incidents.length, '| new:', fresh.length, '| suppressed:', incidents.length - fresh.length);\n\nreturn fresh.map(inc => ({ json: inc }));"
+      },
+      "id": "d75dca42-cc5a-4091-bc6a-cbce2226344d",
+      "name": "Filter New Incidents",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        530,
+        300
+      ]
     }
   ],
   "connections": {
     "Every Minute": {
-      "main": [[{ "node": "Fetch Open Incidents", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Fetch Open Incidents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Fetch Open Incidents": {
-      "main": [[{ "node": "Loop Over Incidents", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Filter New Incidents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Loop Over Incidents": {
-      "main": [[{ "node": "Summarize Incident", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Summarize Incident",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Summarize Incident": {
-      "main": [[{ "node": "Post Summary to Slack", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Post Summary to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter New Incidents": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Incidents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {},
