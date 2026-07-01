@@ -80,4 +80,8 @@ In n8n, open the `email_log` Data Table to browse. To find a specific week, filt
 ## Future upgrades (not done here)
 
 - Promote the in-workflow Error Trigger to a **shared error workflow** once you have more than one workflow (set under Workflow Settings → Error Workflow).
-- Add **`retryOnFail`** to the external-call nodes (Notion, Jira, Claude, Gmail) — review item #8.
+
+## Already done (previously listed as future work)
+
+- **`retryOnFail`** is now enabled on the external-call nodes (Notion 3×, Jira 3×, Claude 3×, Gmail 2×) — review item #8.
+- **Explicit HTTP timeouts** are set on the Notion (30s) and Claude (60s) HTTP Request nodes — review item #9.
