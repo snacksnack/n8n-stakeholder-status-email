@@ -1,3 +1,13 @@
 .env
 .DS_Store
 Thumbs.db
+
+# Eval run records — local measurements (RC1-258)
+eval-runs/
+.venv/
+
+# Python (RC1-258)
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
