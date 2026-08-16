@@ -2,6 +2,31 @@
 
 Automated weekly status email for the AI Incident Summarizer project (RC1), powered by n8n and Claude.
 
+
+## How we know the email is any good
+
+The prompt lives inside the committed workflow JSON, so it is a versioned,
+diffable artifact. Two layers test it — see
+[`docs/rc1-258-evals.md`](docs/rc1-258-evals.md).
+
+**Layer 1 is the one that matters most, and it is free.** `Parse Email Content`
+regex-extracts the exact shape `Claude — Generate Email` asks for, and falls
+back to a hardcoded subject when the regex misses. Edit one without the other
+and nothing errors — a stakeholder just receives an email with a stale subject
+and the real one buried in the body. `pytest` reads both nodes out of the
+workflow JSON and asserts they still agree. It needs no credentials and runs on
+every push.
+
+**Layer 2** binds fixtures into the real prompt and calls the model, scoring
+whether the output parses through the shipped parser, states the counts,
+restates the health the rules engine computed (rather than deciding its own),
+and adds nothing the parser already appends.
+
+```bash
+pytest                 # layer 1 — free
+python -m evals        # layer 2 — billed, needs ANTHROPIC_API_KEY
+```
+
 ## What it does
 
 Every Friday at 4pm ET:
