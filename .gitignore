@@ -2,8 +2,7 @@
 .DS_Store
 Thumbs.db
 
-# Eval run records — local measurements (RC1-258)
-eval-runs/
+
 .venv/
 
 # Python (RC1-258)
@@ -11,3 +10,8 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .ruff_cache/
+
+# RC1-255: eval-runs/ is deliberately NOT ignored. Run records are committed so
+# the trend view can attribute a score change to a model or prompt version —
+# see agent-evals/docs/trend.md. CI never writes this log, so everything in it
+# is a measurement someone chose to take.
