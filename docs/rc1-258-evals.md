@@ -44,6 +44,16 @@ Binds a fixture into the committed prompt and calls the Messages API with the
 model the workflow pins. No n8n runtime, no Notion, no Jira, no Gmail — and
 nothing is emailed.
 
+The run/record/exit plumbing is the shared
+[`agent-evals`](https://github.com/snacksnack/agent-evals) harness (RC1-262);
+what lives here is only this repo's subject and fixtures. `ANTHROPIC_API_KEY`
+is read from the process environment — this repo's eval path reads no `.env`.
+Records land in the shared store when `EVAL_DATABASE_URL` is set (else a local
+gitignored `eval-runs/runs.jsonl`), and render to the
+[quality trend page](https://snacksnack.github.io/agent-evals/) — see the
+library's
+[runbook](https://github.com/snacksnack/agent-evals/blob/main/docs/measuring.md).
+
 Four fixtures cover the three health states and the boundary between them. The
 boundary case is 49% complete *with work in progress*: below the 50% threshold
 and still On Track, because the Needs Attention branch also requires
