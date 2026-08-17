@@ -49,6 +49,7 @@ from __future__ import annotations
 import re
 import time
 
+from agent_evals import pricing
 from agent_evals.case import Case
 from agent_evals.record import CaseResult, CharacteristicResult, SubjectVersion, Usage
 
@@ -286,6 +287,8 @@ def run(case: Case, client) -> CaseResult:
     latency_ms = (time.perf_counter() - started) * 1000
 
     subject, summary = workflow.parse(text)
+    input_tokens = getattr(response.usage, "input_tokens", 0)
+    output_tokens = getattr(response.usage, "output_tokens", 0)
     return CaseResult(
         case_id=case.id,
         characteristics=[
@@ -296,8 +299,11 @@ def run(case: Case, client) -> CaseResult:
             _length(summary or text),
         ],
         usage=Usage(
-            input_tokens=getattr(response.usage, "input_tokens", 0),
-            output_tokens=getattr(response.usage, "output_tokens", 0),
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            # Priced, not counted: recording $0 for a billed run is RC1-254's
+            # exact finding, and the trend page dutifully displayed it (RC1-269).
+            cost_usd=pricing.cost_usd(workflow.model(), input_tokens, output_tokens),
             latency_ms=latency_ms,
         ),
         observations={
