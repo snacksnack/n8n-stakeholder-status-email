@@ -55,7 +55,8 @@ def test_aiming_at_a_state_still_fails_when_the_right_one_is_never_claimed():
 def test_a_verb_form_of_the_state_counts():
     """RC1-376: the model wrote "flagged as needing attention" for Needs Attention
     and the gate read it as never stated. The level was restated; the grammar moved."""
-    assert subject._restates_health("The project health is flagged as needing attention.", ZERO).passed
+    flagged = "The project health is flagged as needing attention."
+    assert subject._restates_health(flagged, ZERO).passed
     assert subject._restates_health("These items need attention this week.", ZERO).passed
 
 
