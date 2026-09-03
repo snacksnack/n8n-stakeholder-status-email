@@ -127,7 +127,13 @@ Go to console.anthropic.com → API Keys → Create key → name it `n8n-stakeho
 8. In n8n: Credentials → Gmail OAuth2 → paste Client ID and Secret → Sign in with Google
 
 ### 3. Import the workflow
-In n8n: Workflows → Import from file → select `workflows/stakeholder_status_email.json`
+In n8n: Workflows → Import from file → select `workflows/status-email-notification.json`
+
+Importing replaces the whole workflow, table selections included. The five `Log — …` nodes write to the
+`email_log` Data Table by its ID, which is committed in the JSON; if your instance's table has a different ID
+(a fresh instance, or the table was recreated), re-select `email_log` in each of those five nodes after
+importing, or the run fails with *Data table with ID … could not be found*. The `pending_email` nodes
+carry their ID the same way.
 
 ### 4. Wire up credentials
 Click each node and assign the correct credential:
