@@ -13,6 +13,7 @@ someone changed the real one.
 
 from __future__ import annotations
 
+import json
 import re
 
 import pytest
@@ -172,3 +173,17 @@ def test_the_fixture_set_covers_all_three_health_states_and_the_boundary():
         "the boundary case must sit below 50% and still be On Track, or it is "
         "not testing the branch it exists for"
     )
+
+
+# --- the Notion query reaches the epic's tasks (RC1-677) ------------------
+
+
+def test_the_notion_query_filters_to_the_epic():
+    """Unfiltered, a 100-page response can miss every RC1-31 task."""
+    body = json.loads(workflow.node("Notion — Get All RC1 Tasks")["parameters"]["jsonBody"])
+    assert body["filter"] == {"property": "Epic", "rich_text": {"equals": "RC1-31"}}
+
+
+def test_a_truncated_notion_response_aborts_the_email():
+    code = workflow.aggregate_code()
+    assert "notionData.has_more" in code and "incomplete status email" in code
